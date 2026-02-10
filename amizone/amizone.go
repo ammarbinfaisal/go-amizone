@@ -14,11 +14,13 @@ import (
 
 	"k8s.io/klog/v2"
 
+	"github.com/ditsuke/go-amizone/amizone/capsolver"
 	"github.com/ditsuke/go-amizone/amizone/internal"
 	"github.com/ditsuke/go-amizone/amizone/internal/marshaller"
 	"github.com/ditsuke/go-amizone/amizone/internal/parse"
 	"github.com/ditsuke/go-amizone/amizone/internal/validator"
 	"github.com/ditsuke/go-amizone/amizone/models"
+	"github.com/ditsuke/go-amizone/amizone/tlsclient"
 )
 
 // Endpoints
@@ -74,17 +76,58 @@ type Credentials struct {
 	Password string
 }
 
+// ClientOption is a function that configures a Client
+type ClientOption func(*Client) error
+
+// WithTLSClient enables TLS fingerprinting and browser impersonation
+// This option creates an HTTP client that mimics real browsers to avoid detection
+// by websites that use TLS fingerprinting. It supports profile rotation for
+// increased resilience against bot detection.
+//
+// Example:
+//
+//	client, err := NewClientWithOptions(cred, WithTLSClient(nil))
+func WithTLSClient(tlsOpts *tlsclient.ClientOptions) ClientOption {
+	return func(c *Client) error {
+		httpClient, err := tlsclient.NewHTTPClient(tlsOpts)
+		if err != nil {
+			return fmt.Errorf("failed to create TLS client: %w", err)
+		}
+		c.httpClient = httpClient
+		return nil
+	}
+}
+
+// WithCapSolver enables automatic CAPTCHA solving using CapSolver
+// This option configures the client to automatically solve Cloudflare Turnstile
+// and reCAPTCHA challenges during login using the CapSolver API.
+//
+// Example:
+//
+//	client, err := NewClientWithOptions(cred, WithCapSolver("your-api-key"))
+func WithCapSolver(apiKey string) ClientOption {
+	return func(c *Client) error {
+		if apiKey == "" {
+			return errors.New("CapSolver API key cannot be empty")
+		}
+		c.capsolverClient = capsolver.NewClient(apiKey)
+		return nil
+	}
+}
+
 // Client is the main struct for the amizone package, exposing the entire API surface
 // for the portal as implemented here. The struct must always be initialized through a public
 // constructor like NewClient()
 type Client struct {
-	httpClient  *http.Client
-	credentials *Credentials
-	// muLogin is a mutex that protects the lastAttempt and didLogin fields from concurrent access.
+	httpClient      *http.Client
+	credentials     *Credentials
+	capsolverClient *capsolver.Client
+	// muLogin is a mutex that protects login-related fields.
 	muLogin struct {
 		sync.Mutex
-		lastAttempt time.Time
-		didLogin    bool
+		lastAttempt      time.Time
+		lastLoginSuccess time.Time
+		didLogin         bool
 	}
 }
 
@@ -98,6 +141,8 @@ func (a *Client) DidLogin() bool {
 // NewClient create a new client instance with Credentials passed, then attempts to log in to the website.
 // The *http.Client parameter can be nil, in which case a default client will be created in its place.
 // To get a non-logged in client, pass empty credentials, ala Credentials{}.
+//
+// For advanced options including TLS fingerprinting, use NewClientWithOptions instead.
 func NewClient(cred Credentials, httpClient *http.Client) (*Client, error) {
 	if httpClient == nil {
 		jar, err := cookiejar.New(nil)
@@ -122,46 +167,170 @@ func NewClient(cred Credentials, httpClient *http.Client) (*Client, error) {
 		return client, nil
 	}
 
-	return client, client.login()
+	return client, client.login(false)
 }
 
-// login attempts to log in to Amizone with the credentials passed to the Client and a scrapped
-// "__RequestVerificationToken" value.
-func (a *Client) login() error {
+// NewClientWithOptions creates a new client with functional options.
+// This allows for more flexible configuration, including TLS fingerprinting support.
+//
+// Example with TLS fingerprinting:
+//
+//	client, err := NewClientWithOptions(
+//	    cred,
+//	    WithTLSClient(&tlsclient.ClientOptions{
+//	        ProfileRotationMode: tlsclient.ProfileRotationRandom,
+//	        Timeout:            30 * time.Second,
+//	    }),
+//	)
+//
+// Example with default TLS fingerprinting:
+//
+//	client, err := NewClientWithOptions(cred, WithTLSClient(nil))
+//
+// If no options are provided, behaves the same as NewClient(cred, nil).
+func NewClientWithOptions(cred Credentials, opts ...ClientOption) (*Client, error) {
+	// Start with default HTTP client
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		klog.Error("failed to create cookiejar for the amizone client. this is a bug.")
+		return nil, errors.New(ErrInternalFailure)
+	}
+
+	client := &Client{
+		httpClient:  &http.Client{Jar: jar},
+		credentials: &cred,
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		if err := opt(client); err != nil {
+			return nil, fmt.Errorf("failed to apply client option: %w", err)
+		}
+	}
+
+	// Ensure the client has a cookie jar after options are applied
+	if client.httpClient.Jar == nil {
+		klog.Error("client option removed the cookie jar. this is not supported.")
+		return nil, errors.New(ErrBadClient)
+	}
+
+	// Skip login for empty credentials
+	if cred == (Credentials{}) {
+		return client, nil
+	}
+
+	return client, client.login(false)
+}
+
+// login attempts to log in to Amizone. If force is false, it will attempt to reuse existing
+// sessions if they appear valid and were established within the last hour.
+func (a *Client) login(force bool) error {
 	a.muLogin.Lock()
 	defer a.muLogin.Unlock()
 
-	if time.Since(a.muLogin.lastAttempt) < time.Minute*2 {
-		return nil
+	// If not forced, check if we can reuse the current session.
+	if !force {
+		// Check if we have valid-looking cookies and a recent successful login.
+		if internal.IsLoggedIn(a.httpClient) && time.Since(a.muLogin.lastLoginSuccess) < time.Hour {
+			klog.V(1).Infof("login: reusing session (last success: %v ago)", time.Since(a.muLogin.lastLoginSuccess))
+			a.muLogin.didLogin = true
+			return nil
+		}
+
+		if time.Since(a.muLogin.lastAttempt) < time.Minute*2 {
+			klog.Warning("login: last attempt was less than 2 minutes ago, skipping to avoid hammering")
+			if a.muLogin.didLogin {
+				return nil
+			}
+			return errors.New("login throttled")
+		}
 	}
 
 	// Record our last login attempt so that we can avoid trying again for some time.
 	a.muLogin.lastAttempt = time.Now()
 
-	// Amizone uses a "verification" token for logins -- we try to retrieve this from the login form page
-	getVerificationTokenFromLoginPage := func() string {
-		response, err := a.doRequest(false, http.MethodGet, "/", nil)
-		if err != nil {
-			klog.Errorf("login: %s", err.Error())
-			return ""
-		}
-		return parse.VerificationToken(response.Body)
-	}()
+	// Fetch the login page to get form fields and check for CAPTCHA requirements
+	response, err := a.doRequest(false, http.MethodGet, "/", nil)
+	if err != nil {
+		klog.Errorf("login: %s", err.Error())
+		return fmt.Errorf("%s: %w", ErrFailedLogin, err)
+	}
 
-	if getVerificationTokenFromLoginPage == "" {
+	// Parse login form to get all required fields
+	loginForm, err := parse.ParseLoginForm(response.Body)
+	if err != nil {
+		klog.Error("login: failed to parse login form")
+		return fmt.Errorf("%s: %s", ErrFailedLogin, ErrFailedToParsePage)
+	}
+
+	if loginForm.VerificationToken == "" {
 		klog.Error("login: failed to retrieve verification token from the login page")
 		return fmt.Errorf("%s: %s", ErrFailedLogin, ErrFailedToParsePage)
 	}
 
-	loginRequestData := func() (v url.Values) {
-		v = url.Values{}
-		v.Set(verificationTokenName, getVerificationTokenFromLoginPage)
-		v.Set("_UserName", a.credentials.Username)
-		v.Set("_Password", a.credentials.Password)
-		v.Set("_QString", "")
-		return
-	}()
+	// Prepare login form data
+	loginRequestData := url.Values{}
+	loginRequestData.Set(verificationTokenName, loginForm.VerificationToken)
+	loginRequestData.Set("_UserName", a.credentials.Username)
+	loginRequestData.Set("_Password", a.credentials.Password)
+	loginRequestData.Set("_QString", "") // Will be set to "test" when CAPTCHA is solved
+	loginRequestData.Set("honeypot", "") // Must be empty (anti-bot field)
 
+	// Add any additional fields that were parsed
+	if loginForm.Salt != "" {
+		loginRequestData.Set("Salt", loginForm.Salt)
+	}
+	if loginForm.SecretNumber != "" {
+		loginRequestData.Set("SecretNumber", loginForm.SecretNumber)
+	}
+	if loginForm.Signature != "" {
+		loginRequestData.Set("Signature", loginForm.Signature)
+	}
+	if loginForm.Challenge != "" {
+		loginRequestData.Set("Challenge", loginForm.Challenge)
+	}
+
+	// Solve CAPTCHA if CapSolver is configured
+	klog.Infof("DEBUG: capsolverClient=%v, TurnstileSiteKey=%q", a.capsolverClient != nil, loginForm.TurnstileSiteKey)
+	if a.capsolverClient != nil {
+		klog.Info("CapSolver is configured, checking for CAPTCHA challenges")
+
+		// Check for Cloudflare Turnstile
+		if loginForm.TurnstileSiteKey != "" {
+			klog.Infof("Cloudflare Turnstile detected (sitekey: %s), solving with CapSolver", loginForm.TurnstileSiteKey)
+			turnstileToken, err := a.capsolverClient.SolveTurnstile(BaseURL, loginForm.TurnstileSiteKey)
+			if err != nil {
+				klog.Errorf("Failed to solve Turnstile: %s", err.Error())
+				return fmt.Errorf("%s: failed to solve Turnstile CAPTCHA: %w", ErrFailedLogin, err)
+			}
+			// Amizone stores Turnstile token in RecaptchaToken field and sets _QString to "test"
+			loginRequestData.Set("RecaptchaToken", turnstileToken)
+			loginRequestData.Set("_QString", "test")
+			// Also set cf-turnstile-response for compatibility
+			loginRequestData.Set("cf-turnstile-response", turnstileToken)
+			klog.Infof("Turnstile token set in RecaptchaToken and _QString=test")
+		}
+
+		// Note: reCAPTCHA on password recovery form, not login form
+		// If it appears on login form in the future, we can handle it here
+	}
+
+		// Avoid logging secrets (passwords, tokens, signatures) at info level.
+		if klog.V(2).Enabled() {
+			redacted := url.Values{}
+			for key, values := range loginRequestData {
+				if len(values) == 0 {
+					continue
+				}
+				switch key {
+				case "_Password", "RecaptchaToken", "cf-turnstile-response", verificationTokenName, "Signature", "Challenge", "Salt", "SecretNumber":
+					redacted.Set(key, "<redacted>")
+				default:
+					redacted.Set(key, values[0])
+				}
+			}
+			klog.V(2).Infof("login: sending request fields: %s", redacted.Encode())
+		}
 	loginResponse, err := a.doRequest(
 		false,
 		http.MethodPost,
@@ -173,9 +342,12 @@ func (a *Client) login() error {
 		return fmt.Errorf("%s: %w", ErrFailedLogin, err)
 	}
 
+	klog.Infof("DEBUG: Login response URL: %s, Status: %s", loginResponse.Request.URL.String(), loginResponse.Status)
+
 	// The login request should redirect our request to the home page with a 302 "found" status code.
 	// If we're instead redirected to the login page, we've failed to log in because of invalid credentials
 	if loginResponse.Request.URL.Path == loginRequestEndpoint {
+		klog.Infof("DEBUG: Login failed - redirected back to login page")
 		return errors.New(ErrInvalidCredentials)
 	}
 
@@ -196,6 +368,7 @@ func (a *Client) login() error {
 	}
 
 	a.muLogin.didLogin = true
+	a.muLogin.lastLoginSuccess = time.Now()
 	return nil
 }
 

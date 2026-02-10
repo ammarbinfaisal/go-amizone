@@ -23,8 +23,21 @@ func Profile(body io.Reader) (*models.Profile, error) {
 		return nil, errors.New(ErrNotLoggedIn)
 	}
 
+	// Check for "Not Applicable" response (ID card feature disabled)
+	if isNotApplicablePage(dom) {
+		klog.Info("parse(profile): ID Card feature not available (Not Applicable); returning empty profile")
+		return &models.Profile{}, nil
+	}
+
 	if !isIDCardPage(dom) {
-		return nil, fmt.Errorf("%s: Not ID Card Page", ErrFailedToParse)
+		// Fallback: maybe we're on the dashboard (some instances return full layouts).
+		if info := dom.Find(selectorDashboardProfile); info.Length() > 0 {
+			return parseDashboardProfile(dom)
+		}
+
+		breadcrumb := CleanString(dom.Find(selectorActiveBreadcrumb).Text())
+		klog.Infof("parse(profile): ID Card page not available (breadcrumb: %q); returning empty profile", breadcrumb)
+		return &models.Profile{}, nil
 	}
 
 	const (
@@ -127,4 +140,39 @@ func Profile(body io.Reader) (*models.Profile, error) {
 func isIDCardPage(dom *goquery.Document) bool {
 	const IDCardPageBreadcrumb = "ID Card View"
 	return CleanString(dom.Find(selectorActiveBreadcrumb).Text()) == IDCardPageBreadcrumb
+}
+
+// isNotApplicablePage checks if the ID Card page returns "Not Applicable"
+// (indicates the feature is disabled on this Amizone instance)
+func isNotApplicablePage(dom *goquery.Document) bool {
+	// Check for the specific "Not Applicable" message pattern
+	text := CleanString(dom.Text())
+	return strings.Contains(text, "Not Applicable")
+}
+
+func parseDashboardProfile(dom *goquery.Document) (*models.Profile, error) {
+	info := dom.Find(selectorDashboardProfile)
+	if info.Length() == 0 {
+		return nil, errors.New("failed to find profile info on dashboard")
+	}
+
+	profile := &models.Profile{}
+
+	// Text is like "Mr MALIK AMMAR FAISAL  A2305222014"
+	// Small tag contains enrollment number
+	profile.EnrollmentNumber = CleanString(info.Find("small").Text())
+
+	// Full text minus small tag text should be the name
+	infoClone := info.Clone()
+	infoClone.Find("small").Remove()
+	profile.Name = CleanString(infoClone.Text())
+
+	// Try to get UUID from photo URL
+	photoUrl, exists := dom.Find(selectorDashboardUserPhoto).Attr("src")
+	if exists {
+		studentUUID := regexp.MustCompile(`\w{8}-\w{4}-\w{4}-\w{4}-\w{12}`).FindString(photoUrl)
+		profile.UUID = studentUUID
+	}
+
+	return profile, nil
 }

@@ -17,8 +17,10 @@ const (
 
 // Shared selectors
 const (
-	selectorActiveBreadcrumb = "ul.breadcrumb li.active"
-	selectorDataRows         = "tbody > tr"
+	selectorActiveBreadcrumb   = "ul.breadcrumb li.active"
+	selectorDataRows           = "tbody > tr"
+	selectorDashboardProfile   = "span.user-info"
+	selectorDashboardUserPhoto = "#userphoto img"
 )
 
 // Shared selector templates

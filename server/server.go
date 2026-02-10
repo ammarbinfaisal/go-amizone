@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ditsuke/go-amizone/amizone"
 	v1 "github.com/ditsuke/go-amizone/server/gen/go/v1"
 	"github.com/go-logr/logr"
 	grpcAuth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
@@ -25,6 +24,9 @@ import (
 type ContextKey string
 
 const ContextAmizoneClientKey ContextKey = "amizone_client"
+
+// Global session cache for reusing logged-in clients
+var globalSessionCache = NewSessionCache(DefaultSessionTTL)
 
 // Config is the configuration entity for ApiServer.
 type Config struct {
@@ -167,6 +169,7 @@ func isGrpc(r *http.Request) bool {
 // authorizeCtx is a grpc_auth.AuthFunc. It authorizes the request by checking for
 // the (currently) supported Basic auth header and then validating the credentials by
 // getting a logged-in instance of amizone.Client.
+// Sessions are cached to avoid re-login for every request.
 func authorizeCtx(ctx context.Context) (context.Context, error) {
 	credentialsEncoded, err := grpcAuth.AuthFromMD(ctx, "basic")
 	if err != nil {
@@ -182,8 +185,12 @@ func authorizeCtx(ctx context.Context) (context.Context, error) {
 		return ctx, status.Errorf(codes.Unauthenticated, "bad auth string")
 	}
 	user, pass := string(credentials[:index]), string(credentials[index+1:])
-	client, err := amizone.NewClient(amizone.Credentials{Username: user, Password: pass}, nil)
+
+	// Use session cache to avoid re-login per request
+	client, err := globalSessionCache.GetOrCreate(user, pass)
 	if err != nil {
+		// Remove from cache if login failed (might be stale)
+		globalSessionCache.Delete(user, pass)
 		return ctx, status.Error(codes.Unauthenticated, "amizone: "+err.Error())
 	}
 	return context.WithValue(ctx, ContextAmizoneClientKey, client), nil

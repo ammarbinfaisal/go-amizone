@@ -29,7 +29,7 @@ func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body i
 	// Login now if we didn't log in at instantiation.
 	if tryLogin && !a.DidLogin() {
 		klog.Infof("doRequest: Attempting to login since we haven't logged in yet.")
-		if err := a.login(); err != nil {
+		if err := a.login(false); err != nil {
 			return nil, err
 		}
 		tryLogin = false // We don't want to attempt another login.
@@ -41,9 +41,12 @@ func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body i
 		return nil, errors.New(ErrFailedToComposeRequest)
 	}
 
-	req.Header.Set("User-Agent", internal.Firefox99UserAgent)
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", internal.FirefoxUserAgent)
+	}
 	// Amizone uses the referrer to authenticate requests on top of the actual AUTH/session cookies.
 	req.Header.Set("Referer", BaseURL+"/")
+	req.Header.Set("Origin", BaseURL)
 	if method == http.MethodPost { // We assume a POST request means submitting a form.
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
@@ -54,6 +57,8 @@ func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body i
 		klog.Errorf("Failed to visit endpoint '%s': %s", endpoint, err)
 		return nil, fmt.Errorf("%s: %w", ErrFailedToVisitPage, err)
 	}
+
+	klog.Infof("doRequest: %s %s -> %s %s", method, endpoint, response.Request.URL.String(), response.Status)
 
 	// Amizone uses code 200 even for POST requests, so we make sure we have that before proceeding.
 	if response.StatusCode != http.StatusOK {
@@ -73,7 +78,7 @@ func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body i
 	// If we're directed to try logging-in and the parser determines we're not, we retry.
 	if tryLogin && *a.credentials != (Credentials{}) && !parse.IsLoggedIn(bytes.NewReader(responseBody)) {
 		klog.Infof("doRequest: Attempting to login since we're not logged in (likely: session expired).")
-		if err := a.login(); err != nil {
+		if err := a.login(true); err != nil {
 			return nil, errors.New(ErrFailedLogin)
 		}
 		return a.doRequest(false, method, endpoint, body)
