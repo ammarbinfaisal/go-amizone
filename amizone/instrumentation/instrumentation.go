@@ -17,7 +17,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/klog/v2"
 )
@@ -93,7 +93,7 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 			semconv.SchemaURL,
 			semconv.ServiceName(ServiceName),
 			semconv.ServiceVersion(ServiceVersion),
-			semconv.DeploymentEnvironment(cfg.Environment),
+			semconv.DeploymentEnvironmentName(cfg.Environment),
 		),
 	)
 	if err != nil {
@@ -251,7 +251,14 @@ func Meter() metric.Meter {
 
 // StartSpan starts a new span with the given name
 func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return tracer.Start(ctx, name, opts...)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	t := tracer
+	if t == nil {
+		t = otel.Tracer(ServiceName)
+	}
+	return t.Start(ctx, name, opts...)
 }
 
 // RequestTracer is a helper for tracing HTTP requests to Amizone
@@ -265,7 +272,15 @@ type RequestTracer struct {
 
 // StartRequest starts tracing an outbound request to Amizone
 func StartRequest(ctx context.Context, method, endpoint string) *RequestTracer {
-	ctx, span := tracer.Start(ctx, "amizone.request",
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	t := tracer
+	if t == nil {
+		t = otel.Tracer(ServiceName)
+	}
+
+	ctx, span := t.Start(ctx, "amizone.request",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			semconv.HTTPRequestMethodKey.String(method),

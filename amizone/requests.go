@@ -2,11 +2,13 @@ package amizone
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/ditsuke/go-amizone/amizone/instrumentation"
 	"github.com/ditsuke/go-amizone/amizone/internal"
 	"github.com/ditsuke/go-amizone/amizone/internal/parse"
 	"k8s.io/klog/v2"
@@ -22,15 +24,24 @@ const (
 // method must be a valid http request method.
 // endpoint must be relative to BaseUrl.
 func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body io.Reader) (*http.Response, error) {
+	statusCode := 0
+	var reqErr error
+	requestTrace := instrumentation.StartRequest(context.Background(), method, endpoint)
+	defer func() {
+		requestTrace.End(statusCode, reqErr)
+	}()
+
 	if *a.credentials == (Credentials{}) {
-		return nil, fmt.Errorf("%s: invalid credentials", ErrFailedLogin)
+		reqErr = fmt.Errorf("%s: invalid credentials", ErrFailedLogin)
+		return nil, reqErr
 	}
 
 	// Login now if we didn't log in at instantiation.
 	if tryLogin && !a.DidLogin() {
 		klog.Infof("doRequest: Attempting to login since we haven't logged in yet.")
 		if err := a.login(false); err != nil {
-			return nil, err
+			reqErr = err
+			return nil, reqErr
 		}
 		tryLogin = false // We don't want to attempt another login.
 	}
@@ -38,7 +49,8 @@ func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body i
 	req, err := http.NewRequest(method, BaseURL+endpoint, body)
 	if err != nil {
 		klog.Errorf("%s: %s", ErrFailedToComposeRequest, err)
-		return nil, errors.New(ErrFailedToComposeRequest)
+		reqErr = errors.New(ErrFailedToComposeRequest)
+		return nil, reqErr
 	}
 
 	if req.Header.Get("User-Agent") == "" {
@@ -55,21 +67,25 @@ func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body i
 	response, err := a.httpClient.Do(req)
 	if err != nil {
 		klog.Errorf("Failed to visit endpoint '%s': %s", endpoint, err)
-		return nil, fmt.Errorf("%s: %w", ErrFailedToVisitPage, err)
+		reqErr = fmt.Errorf("%s: %w", ErrFailedToVisitPage, err)
+		return nil, reqErr
 	}
+	statusCode = response.StatusCode
 
 	klog.Infof("doRequest: %s %s -> %s %s", method, endpoint, response.Request.URL.String(), response.Status)
 
 	// Amizone uses code 200 even for POST requests, so we make sure we have that before proceeding.
 	if response.StatusCode != http.StatusOK {
 		klog.Warningf("Received non-200 status code from endpoint '%s': %d. Amizone down?", endpoint, response.StatusCode)
-		return nil, fmt.Errorf("%s: %d", ErrNon200StatusCode, response.StatusCode)
+		reqErr = fmt.Errorf("%s: %d", ErrNon200StatusCode, response.StatusCode)
+		return nil, reqErr
 	}
 
 	// Read the response into a byte array, so we can reuse it.
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
-		return response, errors.New(ErrFailedToReadResponse)
+		reqErr = errors.New(ErrFailedToReadResponse)
+		return response, reqErr
 	}
 	_ = response.Body.Close()
 
@@ -79,7 +95,8 @@ func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body i
 	if tryLogin && *a.credentials != (Credentials{}) && !parse.IsLoggedIn(bytes.NewReader(responseBody)) {
 		klog.Infof("doRequest: Attempting to login since we're not logged in (likely: session expired).")
 		if err := a.login(true); err != nil {
-			return nil, errors.New(ErrFailedLogin)
+			reqErr = errors.New(ErrFailedLogin)
+			return nil, reqErr
 		}
 		return a.doRequest(false, method, endpoint, body)
 	}

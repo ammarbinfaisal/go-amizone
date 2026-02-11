@@ -1,6 +1,7 @@
 package amizone
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/ditsuke/go-amizone/amizone/capsolver"
+	"github.com/ditsuke/go-amizone/amizone/instrumentation"
 	"github.com/ditsuke/go-amizone/amizone/internal"
 	"github.com/ditsuke/go-amizone/amizone/internal/marshaller"
 	"github.com/ditsuke/go-amizone/amizone/internal/parse"
@@ -227,6 +229,11 @@ func NewClientWithOptions(cred Credentials, opts ...ClientOption) (*Client, erro
 func (a *Client) login(force bool) error {
 	a.muLogin.Lock()
 	defer a.muLogin.Unlock()
+	start := time.Now()
+	loginSuccess := false
+	defer func() {
+		instrumentation.RecordLogin(context.Background(), loginSuccess, time.Since(start))
+	}()
 
 	// If not forced, check if we can reuse the current session.
 	if !force {
@@ -234,6 +241,7 @@ func (a *Client) login(force bool) error {
 		if internal.IsLoggedIn(a.httpClient) && time.Since(a.muLogin.lastLoginSuccess) < time.Hour {
 			klog.V(1).Infof("login: reusing session (last success: %v ago)", time.Since(a.muLogin.lastLoginSuccess))
 			a.muLogin.didLogin = true
+			loginSuccess = true
 			return nil
 		}
 
@@ -300,9 +308,11 @@ func (a *Client) login(force bool) error {
 			klog.Infof("Cloudflare Turnstile detected (sitekey: %s), solving with CapSolver", loginForm.TurnstileSiteKey)
 			turnstileToken, err := a.capsolverClient.SolveTurnstile(BaseURL, loginForm.TurnstileSiteKey)
 			if err != nil {
+				instrumentation.RecordCFChallenge(context.Background(), loginRequestEndpoint, false)
 				klog.Errorf("Failed to solve Turnstile: %s", err.Error())
 				return fmt.Errorf("%s: failed to solve Turnstile CAPTCHA: %w", ErrFailedLogin, err)
 			}
+			instrumentation.RecordCFChallenge(context.Background(), loginRequestEndpoint, true)
 			// Amizone stores Turnstile token in RecaptchaToken field and sets _QString to "test"
 			loginRequestData.Set("RecaptchaToken", turnstileToken)
 			loginRequestData.Set("_QString", "test")
@@ -315,22 +325,22 @@ func (a *Client) login(force bool) error {
 		// If it appears on login form in the future, we can handle it here
 	}
 
-		// Avoid logging secrets (passwords, tokens, signatures) at info level.
-		if klog.V(2).Enabled() {
-			redacted := url.Values{}
-			for key, values := range loginRequestData {
-				if len(values) == 0 {
-					continue
-				}
-				switch key {
-				case "_Password", "RecaptchaToken", "cf-turnstile-response", verificationTokenName, "Signature", "Challenge", "Salt", "SecretNumber":
-					redacted.Set(key, "<redacted>")
-				default:
-					redacted.Set(key, values[0])
-				}
+	// Avoid logging secrets (passwords, tokens, signatures) at info level.
+	if klog.V(2).Enabled() {
+		redacted := url.Values{}
+		for key, values := range loginRequestData {
+			if len(values) == 0 {
+				continue
 			}
-			klog.V(2).Infof("login: sending request fields: %s", redacted.Encode())
+			switch key {
+			case "_Password", "RecaptchaToken", "cf-turnstile-response", verificationTokenName, "Signature", "Challenge", "Salt", "SecretNumber":
+				redacted.Set(key, "<redacted>")
+			default:
+				redacted.Set(key, values[0])
+			}
 		}
+		klog.V(2).Infof("login: sending request fields: %s", redacted.Encode())
+	}
 	loginResponse, err := a.doRequest(
 		false,
 		http.MethodPost,
@@ -369,6 +379,7 @@ func (a *Client) login(force bool) error {
 
 	a.muLogin.didLogin = true
 	a.muLogin.lastLoginSuccess = time.Now()
+	loginSuccess = true
 	return nil
 }
 

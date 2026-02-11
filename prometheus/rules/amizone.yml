@@ -1,0 +1,65 @@
+groups:
+  - name: amizone.recording
+    interval: 30s
+    rules:
+      # Request rate per 5 minutes
+      - record: job:amizone_request_rate5m
+        expr: rate(amizone_requests_total[5m])
+
+      # Error rate per 5 minutes
+      - record: job:amizone_error_rate5m
+        expr: rate(amizone_errors_total[5m])
+
+      # Login attempt rate per 5 minutes
+      - record: job:amizone_login_rate5m
+        expr: rate(amizone_login_attempts_total[5m])
+
+      # Request duration p50
+      - record: job:amizone_request_duration_p50
+        expr: histogram_quantile(0.50, sum by (le) (rate(amizone_request_duration_milliseconds_bucket[5m])))
+
+      # Request duration p95
+      - record: job:amizone_request_duration_p95
+        expr: histogram_quantile(0.95, sum by (le) (rate(amizone_request_duration_milliseconds_bucket[5m])))
+
+      # Request duration p99
+      - record: job:amizone_request_duration_p99
+        expr: histogram_quantile(0.99, sum by (le) (rate(amizone_request_duration_milliseconds_bucket[5m])))
+
+  - name: amizone.alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(amizone_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on Amizone API"
+          description: "Error rate is {{ $value | humanize }} errors/sec over the last 5 minutes."
+
+      - alert: CloudflareChallengeSurge
+        expr: increase(amizone_cloudflare_challenges_total[10m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cloudflare challenge surge"
+          description: "{{ $value }} Cloudflare challenges in the last 10 minutes."
+
+      - alert: HighRequestLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(amizone_request_duration_milliseconds_bucket[5m]))) > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency"
+          description: "p95 latency is {{ $value | humanize }}ms."
+
+      - alert: AmizoneScrapeDown
+        expr: up{job="amizone-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Amizone API is down"
+          description: "Prometheus cannot scrape the amizone-api target."

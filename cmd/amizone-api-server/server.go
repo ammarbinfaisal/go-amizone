@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ditsuke/go-amizone/amizone/instrumentation"
 	"github.com/ditsuke/go-amizone/server"
 	"github.com/joho/godotenv"
 	"k8s.io/klog/v2"
@@ -34,6 +35,13 @@ func main() {
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		logger.Error(err, "failed to parse flags")
 		os.Exit(1)
+	}
+
+	// Initialise OpenTelemetry (traces + Prometheus metrics).
+	ctx := context.Background()
+	otelShutdown, err := instrumentation.Init(ctx, instrumentation.DefaultConfig())
+	if err != nil {
+		logger.Error(err, "failed to initialise OpenTelemetry")
 	}
 
 	s := server.New(config)
@@ -62,6 +70,12 @@ func main() {
 
 	if err := s.Stop(cancelCtx); err != nil {
 		logger.Error(err, "failed to gracefully shut down server", err)
+	}
+
+	if otelShutdown != nil {
+		if err := otelShutdown(cancelCtx); err != nil {
+			logger.Error(err, "failed to shut down OpenTelemetry")
+		}
 	}
 
 	logger.Info("server gracefully shut down")

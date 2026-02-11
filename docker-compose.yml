@@ -15,10 +15,10 @@ services:
       - amizone-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
-      interval: 30s
+      interval: 120s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
   amizone-api:
     build:
@@ -36,16 +36,20 @@ services:
       - BROWSER_LOGIN_URL=http://browser-login:8082
       - CAPSOLVER_API_KEY=${CAPSOLVER_API_KEY}
       - PROXY=${PROXY:-}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4318
+      - METRICS_ENABLED=true
     expose:
       - "8081"
+      - "9090"
     networks:
       - amizone-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/health"]
-      interval: 30s
+      interval: 120s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 45s
 
   nginx:
     image: nginx:alpine
@@ -62,9 +66,64 @@ services:
       - amizone-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
-      interval: 30s
+      interval: 120s
       timeout: 10s
       retries: 3
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.99.0
+    container_name: amizone-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    expose:
+      - "4317"  # OTLP gRPC
+      - "4318"  # OTLP HTTP
+      - "8889"  # Prometheus metrics scrape endpoint
+    networks:
+      - amizone-network
+    depends_on:
+      - amizone-api
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: amizone-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - amizone-network
+    depends_on:
+      - otel-collector
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: amizone-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - amizone-network
+    depends_on:
+      - prometheus
 
 networks:
   amizone-network:
@@ -72,3 +131,5 @@ networks:
 
 volumes:
   nginx-cache:
+  prometheus-data:
+  grafana-data:

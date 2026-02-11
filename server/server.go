@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	grpcAuth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -126,6 +127,16 @@ func (s *ApiServer) newGrpcServer() *grpc.Server {
 // newHttpMux creates a new multiplexer for the ApiServer that routes gRPC and HTTP requests based on the server config.
 func (s *ApiServer) newHttpMux() *http.ServeMux {
 	mux := http.NewServeMux()
+
+	// Health endpoint for container orchestration probes.
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK\n"))
+	})
+
+	// Prometheus metrics endpoint.
+	mux.Handle("/metrics", promhttp.Handler())
 
 	// Serve the "well_known" directory for certificate signing.
 	if s.config.WellKnownDir != "" {
