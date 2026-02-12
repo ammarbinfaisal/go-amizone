@@ -5,7 +5,7 @@
   "tags": ["amizone"],
   "timezone": "browser",
   "schemaVersion": 38,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": { "from": "now-1h", "to": "now" },
   "panels": [
@@ -155,10 +155,79 @@
       ]
     },
     {
+      "id": 14,
+      "title": "Unique Users (interval)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 4, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "count(count by (user_hash) (increase(amizone_login_attempts_total[$__range]) > 0))",
+          "legendFormat": "Unique Users",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Requests per User (hashed)",
+      "type": "table",
+      "gridPos": { "x": 6, "y": 4, "w": 18, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": {
+        "sortBy": [{ "displayName": "Requests", "desc": true }],
+        "footer": { "show": false }
+      },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "user_hash" },
+            "properties": [{ "id": "displayName", "value": "User Hash (SHA-1)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value" },
+            "properties": [{ "id": "displayName", "value": "Requests" }]
+          }
+        ]
+      },
+      "transformations": [
+        { "id": "labelsToFields", "options": { "mode": "columns" } },
+        { "id": "merge", "options": {} }
+      ],
+      "targets": [
+        {
+          "expr": "sum by (user_hash) (increase(amizone_requests_total[$__range]))",
+          "legendFormat": "{{user_hash}}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
+      ]
+    },
+    {
       "id": 7,
       "title": "Request Rate Over Time",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -178,7 +247,7 @@
       "id": 8,
       "title": "Request Duration (p50 / p95 / p99)",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -208,7 +277,7 @@
       "id": 9,
       "title": "Errors Over Time",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -229,7 +298,7 @@
       "id": 10,
       "title": "Login Attempts Over Time",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -249,7 +318,7 @@
       "id": 11,
       "title": "Memory Usage",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 20, "w": 8, "h": 8 },
+      "gridPos": { "x": 0, "y": 24, "w": 8, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -274,7 +343,7 @@
       "id": 12,
       "title": "CPU Usage",
       "type": "timeseries",
-      "gridPos": { "x": 8, "y": 20, "w": 8, "h": 8 },
+      "gridPos": { "x": 8, "y": 24, "w": 8, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -294,7 +363,7 @@
       "id": 13,
       "title": "GC Duration",
       "type": "timeseries",
-      "gridPos": { "x": 16, "y": 20, "w": 8, "h": 8 },
+      "gridPos": { "x": 16, "y": 24, "w": 8, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
