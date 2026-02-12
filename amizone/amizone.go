@@ -232,7 +232,8 @@ func (a *Client) login(force bool) error {
 	start := time.Now()
 	loginSuccess := false
 	defer func() {
-		instrumentation.RecordLogin(context.Background(), loginSuccess, time.Since(start))
+		instrumentation.RecordLogin(context.Background(), loginSuccess, time.Since(start),
+			instrumentation.HashCredentials(a.credentials.Username, a.credentials.Password))
 	}()
 
 	// If not forced, check if we can reuse the current session.

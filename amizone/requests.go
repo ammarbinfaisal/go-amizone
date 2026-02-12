@@ -26,7 +26,8 @@ const (
 func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body io.Reader) (*http.Response, error) {
 	statusCode := 0
 	var reqErr error
-	requestTrace := instrumentation.StartRequest(context.Background(), method, endpoint)
+	requestTrace := instrumentation.StartRequest(context.Background(), method, endpoint,
+		instrumentation.HashCredentials(a.credentials.Username, a.credentials.Password))
 	defer func() {
 		requestTrace.End(statusCode, reqErr)
 	}()

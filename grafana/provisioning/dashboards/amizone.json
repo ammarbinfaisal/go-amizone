@@ -237,7 +237,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, endpoint, status_code) (rate(label_replace(amizone_requests_total, \"endpoint\", \"$1\", \"endpoint\", \"([^?]*).*\")[5m]))",
+          "expr": "sum by (method, endpoint, status_code) (label_replace(rate(amizone_requests_total[5m]), \"endpoint\", \"$1\", \"endpoint\", \"([^?]*).*\"))",
           "legendFormat": "{{method}} {{endpoint}} {{status_code}}",
           "refId": "A"
         }

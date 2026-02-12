@@ -4,6 +4,8 @@ package instrumentation
 
 import (
 	"context"
+	"crypto/sha1"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -21,6 +23,17 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/klog/v2"
 )
+
+// HashCredentials returns a short SHA-1 hex string derived from the username and
+// password. It is used as an opaque, non-reversible identifier for counting unique
+// users in metrics without storing plaintext credentials.
+func HashCredentials(username, password string) string {
+	h := sha1.New()
+	h.Write([]byte(username))
+	h.Write([]byte(":"))
+	h.Write([]byte(password))
+	return fmt.Sprintf("%x", h.Sum(nil))[:16]
+}
 
 const (
 	ServiceName    = "amizone-api"
@@ -268,10 +281,12 @@ type RequestTracer struct {
 	startTime time.Time
 	endpoint  string
 	method    string
+	userHash  string
 }
 
-// StartRequest starts tracing an outbound request to Amizone
-func StartRequest(ctx context.Context, method, endpoint string) *RequestTracer {
+// StartRequest starts tracing an outbound request to Amizone.
+// userHash should be the value returned by HashCredentials; pass "" to omit.
+func StartRequest(ctx context.Context, method, endpoint, userHash string) *RequestTracer {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -280,13 +295,18 @@ func StartRequest(ctx context.Context, method, endpoint string) *RequestTracer {
 		t = otel.Tracer(ServiceName)
 	}
 
+	spanAttrs := []attribute.KeyValue{
+		semconv.HTTPRequestMethodKey.String(method),
+		semconv.URLPath(endpoint),
+		attribute.String("amizone.endpoint", endpoint),
+	}
+	if userHash != "" {
+		spanAttrs = append(spanAttrs, attribute.String("user_hash", userHash))
+	}
+
 	ctx, span := t.Start(ctx, "amizone.request",
 		trace.WithSpanKind(trace.SpanKindClient),
-		trace.WithAttributes(
-			semconv.HTTPRequestMethodKey.String(method),
-			semconv.URLPath(endpoint),
-			attribute.String("amizone.endpoint", endpoint),
-		),
+		trace.WithAttributes(spanAttrs...),
 	)
 
 	if activeRequests != nil {
@@ -299,6 +319,7 @@ func StartRequest(ctx context.Context, method, endpoint string) *RequestTracer {
 		startTime: time.Now(),
 		endpoint:  endpoint,
 		method:    method,
+		userHash:  userHash,
 	}
 }
 
@@ -330,6 +351,9 @@ func (rt *RequestTracer) End(statusCode int, err error) {
 		attribute.String("endpoint", rt.endpoint),
 		attribute.Int("status_code", statusCode),
 		attribute.Bool("success", err == nil && statusCode < 400),
+	}
+	if rt.userHash != "" {
+		attrs = append(attrs, attribute.String("user_hash", rt.userHash))
 	}
 
 	if requestCounter != nil {
@@ -374,22 +398,30 @@ func RecordCFChallenge(ctx context.Context, endpoint string, solved bool) {
 	}
 }
 
-// RecordLogin records a login attempt
-func RecordLogin(ctx context.Context, success bool, duration time.Duration) {
+// RecordLogin records a login attempt.
+// userHash should be the value returned by HashCredentials; pass "" to omit.
+func RecordLogin(ctx context.Context, success bool, duration time.Duration, userHash string) {
+	loginAttrs := []attribute.KeyValue{
+		attribute.Bool("success", success),
+	}
+	if userHash != "" {
+		loginAttrs = append(loginAttrs, attribute.String("user_hash", userHash))
+	}
+
 	if loginAttemptCounter != nil {
-		loginAttemptCounter.Add(ctx, 1, metric.WithAttributes(
-			attribute.Bool("success", success),
-		))
+		loginAttemptCounter.Add(ctx, 1, metric.WithAttributes(loginAttrs...))
 	}
 
 	span := trace.SpanFromContext(ctx)
 	if span.IsRecording() {
-		span.AddEvent("login_attempt",
-			trace.WithAttributes(
-				attribute.Bool("success", success),
-				attribute.Int64("duration_ms", duration.Milliseconds()),
-			),
-		)
+		spanAttrs := []attribute.KeyValue{
+			attribute.Bool("success", success),
+			attribute.Int64("duration_ms", duration.Milliseconds()),
+		}
+		if userHash != "" {
+			spanAttrs = append(spanAttrs, attribute.String("user_hash", userHash))
+		}
+		span.AddEvent("login_attempt", trace.WithAttributes(spanAttrs...))
 	}
 }
 
