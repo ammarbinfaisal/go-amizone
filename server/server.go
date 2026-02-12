@@ -25,26 +25,23 @@ import (
 type ContextKey string
 
 const ContextAmizoneClientKey ContextKey = "amizone_client"
-const DefaultBrowserLoginURL = "http://localhost:8082"
 
 // Global session cache for reusing logged-in clients
 var globalSessionCache = NewSessionCache(DefaultSessionTTL)
 
 // Config is the configuration entity for ApiServer.
 type Config struct {
-	Logger          logr.Logger
-	BindAddr        string
-	WellKnownDir    string
-	BrowserLoginURL string
+	Logger       logr.Logger
+	BindAddr     string
+	WellKnownDir string
 }
 
 // NewConfig returns a Config with sensible defaults and a logr.Discard logger.
 func NewConfig(bindAddress string) *Config {
 	return &Config{
-		BindAddr:        bindAddress,
-		Logger:          logr.Discard(),
-		WellKnownDir:    "",
-		BrowserLoginURL: DefaultBrowserLoginURL,
+		BindAddr:     bindAddress,
+		Logger:       logr.Discard(),
+		WellKnownDir: "",
 	}
 }
 
@@ -140,7 +137,6 @@ func (s *ApiServer) newHttpMux() *http.ServeMux {
 
 	// Prometheus metrics endpoint.
 	mux.Handle("/metrics", promhttp.Handler())
-	mux.HandleFunc("/api/v1/attendance/screenshot", s.handleAttendanceScreenshot)
 
 	// Serve the "well_known" directory for certificate signing.
 	if s.config.WellKnownDir != "" {
