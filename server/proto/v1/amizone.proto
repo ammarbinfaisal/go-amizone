@@ -231,6 +231,7 @@ message ScheduledClass {
   string faculty = 4;
   string room = 5;
   AttendanceState attendance = 8;
+  bool cancelled = 9;
 }
 
 // ScheduledClasses is a group of scheduled classes, usually used to represent daily class schedules.

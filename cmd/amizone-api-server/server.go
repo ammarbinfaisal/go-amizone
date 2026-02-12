@@ -18,19 +18,24 @@ import (
 )
 
 const (
-	DefaultAddress = "0.0.0.0:8081"
-	AddressEnvVar  = "AMIZONE_API_ADDRESS"
+	DefaultAddress        = "0.0.0.0:8081"
+	AddressEnvVar         = "AMIZONE_API_ADDRESS"
+	BrowserLoginURLEnvVar = "BROWSER_LOGIN_URL"
 )
 
 func main() {
 	logger := klog.NewKlogr()
 	_ = godotenv.Load(".env")
 
-	config := &server.Config{Logger: logger.WithName("server")}
+	config := &server.Config{
+		Logger:          logger.WithName("server"),
+		BrowserLoginURL: EnvOrDefault(BrowserLoginURLEnvVar, server.DefaultBrowserLoginURL),
+	}
 
 	flagSet := flag.NewFlagSet("server config", flag.ExitOnError)
 	flagSet.StringVar(&config.BindAddr, "address", EnvOrDefault(AddressEnvVar, DefaultAddress), "Address to listen on")
 	flagSet.StringVar(&config.WellKnownDir, "well-known-dir", "", "Path to the '.well_known' directory used for TLS certificate signing")
+	flagSet.StringVar(&config.BrowserLoginURL, "browser-login-url", config.BrowserLoginURL, "Browser login service base URL")
 	flagSet.String("v", "", "log verbosity")
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		logger.Error(err, "failed to parse flags")

@@ -472,6 +472,7 @@
         "details": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/protobufAny"
           }
         }
@@ -531,6 +532,7 @@
         "records": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/v1AttendanceRecord"
           }
         }
@@ -586,6 +588,7 @@
         "courses": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/v1Course"
           }
         }
@@ -637,12 +640,14 @@
         "courseWise": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/v1ExamResultRecord"
           }
         },
         "overall": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/v1OverallResult"
           }
         }
@@ -658,6 +663,7 @@
         "exams": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/v1ScheduledExam"
           }
         }
@@ -787,6 +793,9 @@
         },
         "attendance": {
           "$ref": "#/definitions/v1AttendanceState"
+        },
+        "cancelled": {
+          "type": "boolean"
         }
       },
       "description": "ScheduledClass represents a scheduled class."
@@ -797,6 +806,7 @@
         "classes": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/v1ScheduledClass"
           }
         }
@@ -856,6 +866,7 @@
         "semesters": {
           "type": "array",
           "items": {
+            "type": "object",
             "$ref": "#/definitions/v1Semester"
           }
         }

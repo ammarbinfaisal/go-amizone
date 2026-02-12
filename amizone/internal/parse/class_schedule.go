@@ -48,6 +48,7 @@ func ClassSchedule(body io.Reader) (models.ClassSchedule, error) {
 			Faculty:   CleanString(entry.Faculty),
 			Room:      CleanString(entry.Room),
 			Attended:  entry.AttendanceState(),
+			Cancelled: entry.IsCancelled(),
 		}
 
 		classSchedule = append(classSchedule, class)

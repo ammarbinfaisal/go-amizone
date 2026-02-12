@@ -11,6 +11,7 @@ from typing import Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 from playwright.async_api import Browser, async_playwright
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
@@ -272,7 +273,7 @@ class BrowserLoginService:
                         const scripts = document.querySelectorAll('script');
                         for (const script of scripts) {
                             const text = script.textContent || '';
-                            const match = text.match(/sitekey:\s*["']([^"']+)["']/);
+                            const match = text.match(/sitekey:\\s*["']([^"']+)["']/);
                             if (match) return match[1];
                         }
                         return null;
@@ -395,6 +396,49 @@ class BrowserLoginService:
         finally:
             await context.close()
 
+    async def capture_attendance_screenshot(self, username: str, password: str) -> bytes:
+        """
+        Login and capture screenshot of only the attendance/calendar div.
+        Returns PNG bytes.
+        """
+        if not self.browser:
+            raise Exception("Browser not initialized")
+
+        login_result = await self.login(username, password)
+        if not login_result.success or not login_result.cookies:
+            raise PermissionError(login_result.message)
+
+        context = await self.browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        )
+
+        try:
+            cookies = [
+                {
+                    "name": name,
+                    "value": value,
+                    "url": settings.amizone_url,
+                }
+                for name, value in login_result.cookies.items()
+            ]
+            await context.add_cookies(cookies)
+
+            page = await context.new_page()
+            home_url = settings.amizone_url.rstrip('/') + '/Home'
+            await page.goto(home_url, wait_until='domcontentloaded', timeout=60000)
+            await page.wait_for_selector('#calendar, #calendarMain', timeout=30000)
+
+            calendar = await page.query_selector('#calendar')
+            if not calendar:
+                calendar = await page.query_selector('#calendarMain')
+            if not calendar:
+                raise Exception("attendance/calendar div not found")
+
+            return await calendar.screenshot(type='png')
+        finally:
+            await context.close()
+
 
 # Global browser service
 browser_service = BrowserLoginService()
@@ -436,8 +480,25 @@ async def login(request: LoginRequest):
             raise HTTPException(status_code=401, detail=result.message)
 
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Login endpoint error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/attendance-screenshot")
+async def attendance_screenshot(request: LoginRequest):
+    """
+    Login and return PNG screenshot for attendance/calendar div only.
+    """
+    try:
+        png = await browser_service.capture_attendance_screenshot(request.username, request.password)
+        return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except Exception as e:
+        logger.error(f"Attendance screenshot error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

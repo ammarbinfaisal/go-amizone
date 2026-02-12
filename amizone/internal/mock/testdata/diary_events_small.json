@@ -7,7 +7,7 @@
     "color": "class-schedule-color",
     "CourseCode": "IT414 ",
     "sType": "C",
-    "className": "class-schedule-color",
+    "className": "StrikeOutClass",
     "FacultyName": "DRS[2434]",
     "RoomNo": "E1-309",
     "AttndColor": "#f00",

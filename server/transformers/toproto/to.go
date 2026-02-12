@@ -53,6 +53,7 @@ func ScheduledClasses(a models.ClassSchedule) *v1.ScheduledClasses {
 			EndTime:   TimeToProtoTS(c.EndTime),
 			Faculty:   c.Faculty,
 			Room:      c.Room,
+			Cancelled: c.Cancelled,
 			Attendance: func() v1.AttendanceState {
 				switch c.Attended {
 				case models.AttendanceStatePresent:

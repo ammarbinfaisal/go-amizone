@@ -19,6 +19,7 @@ type AmizoneDiaryEvent struct {
 	Type            string `json:"sType"` // "C" for course, "E" for event, "H" for holiday
 	CourseName      string `json:"title"`
 	CourseCode      string `json:"CourseCode"`
+	ClassName       string `json:"className"`
 	Faculty         string `json:"FacultyName"`
 	Room            string `json:"RoomNo"`
 	Start           string `json:"start"` // Start and end keys are in the format "YYYY-MM-DD HH:MM:SS"
@@ -40,6 +41,10 @@ func (e *AmizoneDiaryEvent) AttendanceState() AttendanceState {
 
 	klog.Errorf("Unknown attendance color: %s", e.AttendanceColor)
 	return AttendanceStateInvalid
+}
+
+func (e *AmizoneDiaryEvent) IsCancelled() bool {
+	return strings.Contains(strings.ToLower(e.ClassName), "strikeoutclass")
 }
 
 type AmizoneDiaryEvents []AmizoneDiaryEvent

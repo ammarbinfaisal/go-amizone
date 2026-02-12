@@ -26,6 +26,7 @@ type ScheduledClass struct {
 	Faculty   string
 	Room      string
 	Attended  AttendanceState
+	Cancelled bool
 }
 
 // ClassSchedule is a model for representing class schedule from the portal.

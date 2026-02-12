@@ -28,6 +28,18 @@ func TestClassSchedule(t *testing.T) {
 			},
 		},
 		{
+			name:     "cancelled class is marked from className",
+			bodyFile: mock.DiaryEventsSmallJSON,
+			scheduleMatcher: func(g *WithT, schedule models.ClassSchedule) {
+				g.Expect(schedule).To(HaveLen(3))
+				g.Expect(schedule[0].Cancelled).To(BeTrue())
+				g.Expect(schedule[1].Cancelled).To(BeFalse())
+			},
+			errorMatcher: func(g *GomegaWithT, err error) {
+				g.Expect(err).ToNot(HaveOccurred())
+			},
+		},
+		{
 			name:     "invalid diary events json",
 			bodyFile: mock.LoginPage,
 			scheduleMatcher: func(g *GomegaWithT, schedule models.ClassSchedule) {

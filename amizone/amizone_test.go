@@ -969,10 +969,11 @@ func TestClient_GetClassSchedule(t *testing.T) {
 				g.Expect(schedule).To(HaveLen(3))
 				sb := strings.Builder{}
 				_ = json.NewEncoder(&sb).Encode(schedule)
-				g.Expect(sb.String()).To(MatchJSON(`[{"Course":{"Code":"IT414","Name":"SS"},"StartTime":"2023-04-01T12:15:00Z","EndTime":"2023-04-01T13:10:00Z","Faculty":"DRS[2434]","Room":"E1-309","Attended":2},{"Course":{"Code":"IT301","Name":"SE"},"StartTime":"2023-04-01T12:15:00Z","EndTime":"2023-04-01T13:10:00Z","Faculty":"DRG[2397],DSKD[2436]","Room":"E1-000","Attended":1},{"Course":{"Code":"CSE304","Name":"CC"},"StartTime":"2023-04-01T13:15:00Z","EndTime":"2023-04-01T14:10:00Z","Faculty":"DAG[307870]","Room":"E1-000","Attended":0}]`))
+				g.Expect(sb.String()).To(MatchJSON(`[{"Course":{"Code":"IT414","Name":"SS"},"StartTime":"2023-04-01T12:15:00Z","EndTime":"2023-04-01T13:10:00Z","Faculty":"DRS[2434]","Room":"E1-309","Attended":2,"Cancelled":true},{"Course":{"Code":"IT301","Name":"SE"},"StartTime":"2023-04-01T12:15:00Z","EndTime":"2023-04-01T13:10:00Z","Faculty":"DRG[2397],DSKD[2436]","Room":"E1-000","Attended":1,"Cancelled":false},{"Course":{"Code":"CSE304","Name":"CC"},"StartTime":"2023-04-01T13:15:00Z","EndTime":"2023-04-01T14:10:00Z","Faculty":"DAG[307870]","Room":"E1-000","Attended":0,"Cancelled":false}]`))
 				g.Expect(schedule[0].Attended).To(Equal(models.AttendanceStateAbsent))
 				g.Expect(schedule[1].Attended).To(Equal(models.AttendanceStatePresent))
 				g.Expect(schedule[2].Attended).To(Equal(models.AttendanceStatePending))
+				g.Expect(schedule[0].Cancelled).To(BeTrue())
 			},
 			setup: func(g *WithT) {
 				g.Expect(mock.GockRegisterCalendarEndpoint(fmtDate(standardDate), fmtDate(standardDatePlusOne), mock.DiaryEventsSmallJSON)).ToNot(HaveOccurred())
