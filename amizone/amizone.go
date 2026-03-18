@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"sync"
-	"text/template"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -46,9 +46,13 @@ const (
 	// This _might_ open doors for an exploit (spoiler: indeed it does)
 	removeWifiMacEndpoint = macBaseEndpoint + "/Mac1RegistrationDelete?Amizone_Id=%s&username=%s&X-Requested-With=XMLHttpRequest"
 
-	facultyBaseEndpoint           = "/FacultyFeeback/FacultyFeedback"
-	facultyEndpointSubmitEndpoint = facultyBaseEndpoint + "/SaveFeedbackRating"
+	facultyBaseEndpoint = "/FacultyFeeback/FacultyFeedback"
 )
+
+var facultyFeedbackEndpoints = []string{
+	"/FacultyFeeback/SummerSemesterFacultyFeedback",
+	facultyBaseEndpoint,
+}
 
 // Miscellaneous
 const (
@@ -709,48 +713,106 @@ func (a *Client) SubmitFacultyFeedbackHack(rating int32, queryRating int32, comm
 		queryRating = 1
 	}
 
-	facultyPage, err := a.doRequest(true, http.MethodGet, facultyBaseEndpoint, nil)
-	if err != nil {
-		klog.Errorf("request (faculty page): %s", err.Error())
-		return 0, fmt.Errorf("%s: %s", ErrFailedToFetchPage, err.Error())
+	feedbackSpecs := make(models.FacultyFeedbackSpecs, 0)
+	seenSpecs := make(map[string]struct{})
+	var fetchedAny bool
+	var parsedAny bool
+	var lastErr error
+
+	for _, endpoint := range facultyFeedbackEndpoints {
+		facultyPage, err := a.doRequest(true, http.MethodGet, endpoint, nil)
+		if err != nil {
+			klog.Warningf("request (faculty page %s): %s", endpoint, err.Error())
+			lastErr = err
+			continue
+		}
+		fetchedAny = true
+
+		specsForEndpoint, err := parse.FacultyFeedback(facultyPage.Body)
+		if err != nil {
+			klog.Warningf("parse (faculty feedback %s): %s", endpoint, err.Error())
+			lastErr = err
+			continue
+		}
+		parsedAny = true
+
+		for _, spec := range specsForEndpoint {
+			key := strings.Join([]string{
+				spec.SubmitEndpoint,
+				spec.FacultyId,
+				spec.CourseType,
+				spec.DepartmentId,
+				spec.SerialNumber,
+			}, "|")
+			if _, ok := seenSpecs[key]; ok {
+				continue
+			}
+			seenSpecs[key] = struct{}{}
+			feedbackSpecs = append(feedbackSpecs, spec)
+		}
 	}
 
-	feedbackSpecs, err := parse.FacultyFeedback(facultyPage.Body)
-	if err != nil {
-		klog.Errorf("parse (faculty feedback): %s", err.Error())
+	if !fetchedAny && lastErr != nil {
+		klog.Errorf("request (faculty page): %s", lastErr.Error())
+		return 0, fmt.Errorf("%s: %s", ErrFailedToFetchPage, lastErr.Error())
+	}
+	if !parsedAny && lastErr != nil {
+		klog.Errorf("parse (faculty feedback): %s", lastErr.Error())
 		return 0, errors.New(ErrFailedToParsePage)
 	}
-
-	payloadTemplate, err := template.New("facultyFeedback").Parse(facultyFeedbackTpl)
-	if err != nil {
-		klog.Errorf("Error parsing faculty feedback template: %s", err.Error())
-		return 0, errors.New(ErrInternalFailure)
+	if len(feedbackSpecs) == 0 {
+		return 0, nil
 	}
 
 	// Parallelize feedback submission for max gains 📈
 	wg := sync.WaitGroup{}
 	for _, spec := range feedbackSpecs {
-		spec.Set__Rating = fmt.Sprint(rating)
-		spec.Set__Comment = url.QueryEscape(comment)
-		spec.Set__QRating = fmt.Sprint(queryRating)
-
-		payloadBuilder := strings.Builder{}
-		err = payloadTemplate.Execute(&payloadBuilder, spec)
-		if err != nil {
-			klog.Errorf("Error executing faculty feedback template: %s", err.Error())
-			return 0, fmt.Errorf("error marshalling feedback request: %s", err)
-		}
 		wg.Add(1)
-		go func(payload string) {
-			response, err := a.doRequest(true, http.MethodPost, facultyEndpointSubmitEndpoint, strings.NewReader(payload))
+		go func(spec models.FacultyFeedbackSpec) {
+			defer wg.Done()
+
+			feedbackMethod := spec.FeedbackMethod
+			if feedbackMethod == "" {
+				feedbackMethod = http.MethodPost
+			}
+			var feedbackBody io.Reader
+			if spec.FeedbackPayload != "" {
+				feedbackBody = strings.NewReader(spec.FeedbackPayload)
+			}
+
+			formResponse, err := a.doRequestWithHeaders(
+				true,
+				feedbackMethod,
+				spec.FeedbackEndpoint,
+				feedbackBody,
+				map[string]string{"X-Requested-With": "XMLHttpRequest"},
+			)
+			if err != nil {
+				klog.Errorf("error fetching a faculty feedback form: %s", err.Error())
+				return
+			}
+
+			submission, err := parse.FacultyFeedbackSubmission(formResponse.Body, spec.SubmitEndpoint, rating, queryRating, comment)
+			if err != nil {
+				klog.Errorf("error parsing a faculty feedback form: %s", err.Error())
+				return
+			}
+
+			response, err := a.doRequestWithHeaders(
+				true,
+				http.MethodPost,
+				submission.SubmitEndpoint,
+				strings.NewReader(submission.Payload),
+				map[string]string{"X-Requested-With": "XMLHttpRequest"},
+			)
 			if err != nil {
 				klog.Errorf("error submitting a faculty feedback: %s", err.Error())
+				return
 			}
 			if response.StatusCode != http.StatusOK {
 				klog.Errorf("Unexpected non-200 status code from faculty feedback submission: %d", response.StatusCode)
 			}
-			wg.Done()
-		}(payloadBuilder.String())
+		}(spec)
 	}
 
 	wg.Wait()

@@ -1,6 +1,10 @@
 [
   {
     "VerificationToken": "2oaN2tuDVcdxvIA-H5mN3GMXWywrDHL41076y01r9_TQZGixPRhLfcAEQs9lHxfYh9JJeNLJxKg4rX_6e_vvbxfEymmlsGh2WFc1",
+    "FeedbackEndpoint": "/FacultyFeeback/FacultyFeedback/_FeedbackRating?TypeID=2&CourseType=Open%2FDomain%2FFBL&DetID=94480&FacultyStaffID=121242&SrNo=1730207&FeedbackID=0",
+    "FeedbackMethod": "POST",
+    "FeedbackPayload": "",
+    "SubmitEndpoint": "/FacultyFeeback/FacultyFeedback/SaveFeedbackRating",
     "CourseType": "Open%2FDomain%2FFBL",
     "DepartmentId": "94480",
     "FacultyId": "121242",
@@ -11,6 +15,10 @@
   },
   {
     "VerificationToken": "2oaN2tuDVcdxvIA-H5mN3GMXWywrDHL41076y01r9_TQZGixPRhLfcAEQs9lHxfYh9JJeNLJxKg4rX_6e_vvbxfEymmlsGh2WFc1",
+    "FeedbackEndpoint": "/FacultyFeeback/FacultyFeedback/_FeedbackRating?TypeID=2&CourseType=Open%2FDomain%2FFBL&DetID=94480&FacultyStaffID=120530&SrNo=1730207&FeedbackID=0",
+    "FeedbackMethod": "POST",
+    "FeedbackPayload": "",
+    "SubmitEndpoint": "/FacultyFeeback/FacultyFeedback/SaveFeedbackRating",
     "CourseType": "Open%2FDomain%2FFBL",
     "DepartmentId": "94480",
     "FacultyId": "120530",
@@ -21,6 +29,10 @@
   },
   {
     "VerificationToken": "2oaN2tuDVcdxvIA-H5mN3GMXWywrDHL41076y01r9_TQZGixPRhLfcAEQs9lHxfYh9JJeNLJxKg4rX_6e_vvbxfEymmlsGh2WFc1",
+    "FeedbackEndpoint": "/FacultyFeeback/FacultyFeedback/_FeedbackRating?TypeID=2&CourseType=Open%2FDomain%2FFBL&DetID=94480&FacultyStaffID=124614&SrNo=1730207&FeedbackID=0",
+    "FeedbackMethod": "POST",
+    "FeedbackPayload": "",
+    "SubmitEndpoint": "/FacultyFeeback/FacultyFeedback/SaveFeedbackRating",
     "CourseType": "Open%2FDomain%2FFBL",
     "DepartmentId": "94480",
     "FacultyId": "124614",
@@ -31,6 +43,10 @@
   },
   {
     "VerificationToken": "2oaN2tuDVcdxvIA-H5mN3GMXWywrDHL41076y01r9_TQZGixPRhLfcAEQs9lHxfYh9JJeNLJxKg4rX_6e_vvbxfEymmlsGh2WFc1",
+    "FeedbackEndpoint": "/FacultyFeeback/FacultyFeedback/_FeedbackRating?TypeID=2&CourseType=General&DetID=94480&FacultyStaffID=1248875&SrNo=1730207&FeedbackID=0",
+    "FeedbackMethod": "POST",
+    "FeedbackPayload": "",
+    "SubmitEndpoint": "/FacultyFeeback/FacultyFeedback/SaveFeedbackRating",
     "CourseType": "General",
     "DepartmentId": "94480",
     "FacultyId": "1248875",
@@ -41,6 +57,10 @@
   },
   {
     "VerificationToken": "2oaN2tuDVcdxvIA-H5mN3GMXWywrDHL41076y01r9_TQZGixPRhLfcAEQs9lHxfYh9JJeNLJxKg4rX_6e_vvbxfEymmlsGh2WFc1",
+    "FeedbackEndpoint": "/FacultyFeeback/FacultyFeedback/_FeedbackRating?TypeID=2&CourseType=General&DetID=94480&FacultyStaffID=1248913&SrNo=1730207&FeedbackID=0",
+    "FeedbackMethod": "POST",
+    "FeedbackPayload": "",
+    "SubmitEndpoint": "/FacultyFeeback/FacultyFeedback/SaveFeedbackRating",
     "CourseType": "General",
     "DepartmentId": "94480",
     "FacultyId": "1248913",
@@ -51,6 +71,10 @@
   },
   {
     "VerificationToken": "2oaN2tuDVcdxvIA-H5mN3GMXWywrDHL41076y01r9_TQZGixPRhLfcAEQs9lHxfYh9JJeNLJxKg4rX_6e_vvbxfEymmlsGh2WFc1",
+    "FeedbackEndpoint": "/FacultyFeeback/FacultyFeedback/_FeedbackRating?TypeID=2&CourseType=General&DetID=94480&FacultyStaffID=1248826&SrNo=1730207&FeedbackID=0",
+    "FeedbackMethod": "POST",
+    "FeedbackPayload": "",
+    "SubmitEndpoint": "/FacultyFeeback/FacultyFeedback/SaveFeedbackRating",
     "CourseType": "General",
     "DepartmentId": "94480",
     "FacultyId": "1248826",
@@ -61,6 +85,10 @@
   },
   {
     "VerificationToken": "2oaN2tuDVcdxvIA-H5mN3GMXWywrDHL41076y01r9_TQZGixPRhLfcAEQs9lHxfYh9JJeNLJxKg4rX_6e_vvbxfEymmlsGh2WFc1",
+    "FeedbackEndpoint": "/FacultyFeeback/FacultyFeedback/_FeedbackRating?TypeID=2&CourseType=General&DetID=94480&FacultyStaffID=1249901&SrNo=1730207&FeedbackID=0",
+    "FeedbackMethod": "POST",
+    "FeedbackPayload": "",
+    "SubmitEndpoint": "/FacultyFeeback/FacultyFeedback/SaveFeedbackRating",
     "CourseType": "General",
     "DepartmentId": "94480",
     "FacultyId": "1249901",

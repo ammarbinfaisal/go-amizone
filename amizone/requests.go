@@ -24,6 +24,10 @@ const (
 // method must be a valid http request method.
 // endpoint must be relative to BaseUrl.
 func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body io.Reader) (*http.Response, error) {
+	return a.doRequestWithHeaders(tryLogin, method, endpoint, body, nil)
+}
+
+func (a *Client) doRequestWithHeaders(tryLogin bool, method string, endpoint string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
 	statusCode := 0
 	var reqErr error
 	requestTrace := instrumentation.StartRequest(context.Background(), method, endpoint,
@@ -63,6 +67,11 @@ func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body i
 	if method == http.MethodPost { // We assume a POST request means submitting a form.
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
+	for key, value := range extraHeaders {
+		if value != "" {
+			req.Header.Set(key, value)
+		}
+	}
 
 	// TODO: check error handling logic following here
 	response, err := a.httpClient.Do(req)
@@ -99,7 +108,7 @@ func (a *Client) doRequest(tryLogin bool, method string, endpoint string, body i
 			reqErr = errors.New(ErrFailedLogin)
 			return nil, reqErr
 		}
-		return a.doRequest(false, method, endpoint, body)
+		return a.doRequestWithHeaders(false, method, endpoint, body, extraHeaders)
 	}
 
 	return response, nil
