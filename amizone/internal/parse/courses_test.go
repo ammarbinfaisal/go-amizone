@@ -131,3 +131,24 @@ func TestCoursesInternalMarksFormats(t *testing.T) {
 		})
 	}
 }
+
+func TestCoursesParsesCourseCurriculumLinks(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	html := `<div class="breadcrumbs"><ul class="breadcrumb"><li class="active">My Courses</li></ul></div>
+	<div id="CourseListSemWise"><div><table><thead><tr>
+		<th>Course Code</th><th>Course Name</th><th>Type</th><th>Course Syllabus</th><th>Attendance</th><th>Internal Asses.</th>
+	</tr></thead><tbody><tr>
+		<td data-title="Course Code">CSE401</td>
+		<td data-title="Course Name">Artificial Intelligence</td>
+		<td data-title="Type">Compulsory</td>
+		<td data-title="Course Syllabus"><a target=_blank href="https://faculty.amizone.net/Academics/CourseCurriculumCDSRApprove/Index/?CampusID=1&AcademicYear=2025-2026&CUID=6C53C456-C83A-4D07-9627-EBC3CB96C786&UserID=0"><img src="../../Images/ProgramStrDis.gif" border=0 /></a></td>
+		<td data-title="Attendance">53/73 (72.60)</td>
+		<td data-title="Internal Asses."></td>
+	</tr></tbody></table></div></div>`
+
+	courses, err := parse.Courses(strings.NewReader(html))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(courses).To(HaveLen(1))
+	g.Expect(courses[0].SyllabusDoc).To(Equal("https://faculty.amizone.net/Academics/CourseCurriculumCDSRApprove/Index/?CampusID=1&AcademicYear=2025-2026&CUID=6C53C456-C83A-4D07-9627-EBC3CB96C786&UserID=0"))
+}

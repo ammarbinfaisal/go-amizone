@@ -13,7 +13,7 @@ type Course struct {
 	Type          string
 	Attendance    Attendance
 	InternalMarks Marks  // 0, 0 if not available
-	SyllabusDoc   string // This is, really, a link. Most often broken and useless.
+	SyllabusDoc   string // Link to the course curriculum/syllabus page, when available.
 }
 
 type Courses []Course
