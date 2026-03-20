@@ -141,8 +141,10 @@ services:
       - GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GRAFANA_PUBLIC_USER=${GRAFANA_PUBLIC_USER:-public}
       - GRAFANA_PUBLIC_PASSWORD=${GRAFANA_PUBLIC_PASSWORD:-public}
+      - GRAFANA_SQLITE_PATH=/var/lib/grafana/grafana.db
     volumes:
       - ./grafana/bootstrap:/opt/grafana-bootstrap:ro
+      - grafana-data:/var/lib/grafana
     networks:
       - amizone-network
     depends_on:

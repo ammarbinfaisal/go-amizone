@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import sqlite3
 import sys
 import time
 import urllib.error
@@ -13,6 +14,7 @@ ADMIN_USER = os.environ.get("GRAFANA_ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("GRAFANA_ADMIN_PASSWORD", "admin")
 PUBLIC_USER = os.environ.get("GRAFANA_PUBLIC_USER", "public")
 PUBLIC_PASSWORD = os.environ.get("GRAFANA_PUBLIC_PASSWORD", "public")
+GRAFANA_SQLITE_PATH = os.environ.get("GRAFANA_SQLITE_PATH", "").strip()
 
 
 def auth_header(username: str, password: str) -> str:
@@ -105,9 +107,38 @@ def ensure_public_user():
         status, body = api_request(method, f"/api/org/users/{user_id}", role_payload)
         if status in {200, 204}:
             print(f"Ensured '{PUBLIC_USER}' has Viewer role")
+            revoke_public_auth_tokens(user_id)
             return
 
     raise RuntimeError(f"Failed to set Viewer role for '{PUBLIC_USER}': {status} {body}")
+
+
+def revoke_public_auth_tokens(user_id: int):
+    if not GRAFANA_SQLITE_PATH:
+        print(
+            "Warning: GRAFANA_SQLITE_PATH is not set; cannot revoke existing public auth tokens",
+            file=sys.stderr,
+        )
+        return
+
+    connection = sqlite3.connect(GRAFANA_SQLITE_PATH)
+    try:
+        cursor = connection.cursor()
+        now = int(time.time())
+        cursor.execute(
+            """
+            UPDATE user_auth_token
+            SET revoked_at = ?, updated_at = ?
+            WHERE user_id = ? AND (revoked_at = 0 OR revoked_at IS NULL)
+            """,
+            (now, now, user_id),
+        )
+        revoked_tokens = cursor.rowcount
+        connection.commit()
+    finally:
+        connection.close()
+
+    print(f"Revoked {revoked_tokens} existing auth token(s) for '{PUBLIC_USER}'")
 
 
 def main():
